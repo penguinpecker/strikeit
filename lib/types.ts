@@ -13,6 +13,7 @@ export interface Call {
   cost?: number; // round-trip fee (taker x2 + STRIKE fee + tx), applied to PnL live and at settle
   _lastS?: number;
   marketIndex?: number; // Drift market this live call opened (for the matching close)
+  txhash?: string; // live open tx signature (for persistence)
 }
 
 export interface FeedItem {

@@ -5,6 +5,7 @@ import { usePrivy, useLogin } from "@privy-io/react-auth";
 import { useWallets } from "@privy-io/react-auth/solana";
 import { useStrike } from "@/lib/store";
 import { avatarUrl } from "@/lib/social";
+import { recordPlayer } from "@/lib/persist";
 import { config } from "@/lib/config";
 import { AuthContext, type AuthValue } from "./AuthContext";
 
@@ -68,7 +69,10 @@ export function PrivyAuthProvider({ children }: { children: React.ReactNode }) {
   // in the feed/rails (which arrive by on-chain address) render with their real name + avatar.
   const setIdentity = useStrike((s) => s.setIdentity);
   useEffect(() => {
-    if (solAddress && handle) setIdentity(solAddress, { name: name || handle, avatar });
+    if (solAddress && handle) {
+      setIdentity(solAddress, { name: name || handle, avatar });
+      recordPlayer({ wallet: solAddress, handle, avatar });
+    }
   }, [solAddress, handle, name, avatar, setIdentity]);
 
   // track the connected wallet address so the engine can dedupe the user's own trades out of

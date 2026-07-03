@@ -10,6 +10,7 @@ import { config } from "@/lib/config";
 import { fmt, fmt2 } from "@/lib/format";
 import { blip, chime, thud, haptic } from "@/lib/audio";
 import { loadAvatar, avatarImage, addrColor } from "@/lib/social";
+import { recordCall } from "@/lib/persist";
 import { shortAddress } from "@/lib/solana/wallet";
 import type { Dir, Call, Marker } from "@/lib/types";
 import type { RecentTrade } from "@/lib/drift/types";
@@ -219,11 +220,13 @@ export class GameEngine {
     }
 
     let marketIndex: number | undefined;
+    let openTxhash: string | undefined;
     if (this.opts.mode === "live") {
       this.opening = true;
       try {
         const r = await this.signer.openMarket({ ...intent, symbol: this.opts.market, markPrice: this.price });
         marketIndex = r.marketIndex;
+        openTxhash = r.txhash;
       } catch (e) {
         this.opening = false;
         return s.showToast(e instanceof DriftRailError ? e.message : "live trade failed");
@@ -244,6 +247,7 @@ export class GameEngine {
       value: s.stake,
       cost,
       marketIndex,
+      txhash: openTxhash,
     };
     this.activeCall = call;
     this.opening = false;
@@ -312,10 +316,28 @@ export class GameEngine {
     const streak = win ? s.streak + 1 : 0;
     this.addMarker(this.uh(), c.dir, "out", pct, c.lev);
     const fid = s.nextFeedId();
+    const secs = Math.round((Date.now() - c.t0) / 1000);
     s.endCall(
-      { how, win, pnl, pct, entry: c.entry, dir: c.dir, lev: c.lev, secs: Math.round((Date.now() - c.t0) / 1000), streak },
+      { how, win, pnl, pct, entry: c.entry, dir: c.dir, lev: c.lev, secs, streak },
       { id: fid, nm: "you", you: true, dir: c.dir, pnl, done: true },
     );
+    // persist the settled call to Supabase (fire-and-forget; never blocks the game)
+    recordCall({
+      wallet: s.myAddress,
+      handle: s.user?.h ?? null,
+      symbol: this.opts.market,
+      dir: c.dir,
+      entry: c.entry,
+      lev: c.lev,
+      stake: c.stake,
+      mode: this.opts.mode,
+      how,
+      win,
+      pnl,
+      pct,
+      secs,
+      txhash: c.txhash ?? null,
+    });
     this.refreshBalanceSoon();
     if (win) {
       this.confettiBurst();
