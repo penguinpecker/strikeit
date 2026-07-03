@@ -15,6 +15,7 @@ import {
   closeMarketLive,
   depositCollateral,
   withdrawCollateral,
+  getDriftCollateral,
   type AnchorLikeWallet,
 } from "./driftTrade";
 
@@ -90,4 +91,9 @@ export async function withdrawVia(ctx: DriftSignerCtx, amount: number): Promise<
     withdrawCollateral(amount, { wallet: ctx.wallet, network: ctx.network, broadcast }),
   );
   return { txhash: r.txhash };
+}
+
+/** Read the wallet's free (tradable) USDC collateral on Drift. 0 if no account yet. */
+export function collateralVia(ctx: DriftSignerCtx): Promise<number> {
+  return getDriftCollateral({ wallet: ctx.wallet, network: ctx.network });
 }

@@ -5,7 +5,7 @@ import { useStrike } from "@/lib/store";
 import { useAuth } from "./AuthContext";
 import { useEngine } from "../engineContext";
 import { usePrivySolanaSigner } from "./usePrivySolanaSigner";
-import { makeDriftSigner, withdrawVia, depositVia } from "@/lib/drift/driftSigner";
+import { makeDriftSigner, withdrawVia, depositVia, collateralVia } from "@/lib/drift/driftSigner";
 import { config } from "@/lib/config";
 
 // Renders nothing. While a Privy Solana wallet is connected, it injects a live Drift signer into
@@ -18,6 +18,8 @@ export function LiveSignerBridge() {
   const { setSigner } = useEngine();
   const setWithdrawFn = useStrike((s) => s.setWithdrawFn);
   const setDepositFn = useStrike((s) => s.setDepositFn);
+  const setDriftCollateral = useStrike((s) => s.setDriftCollateral);
+  const setRefreshCollateral = useStrike((s) => s.setRefreshCollateral);
 
   useEffect(() => {
     const account = solAddress || address;
@@ -25,6 +27,8 @@ export function LiveSignerBridge() {
       setSigner(null);
       setWithdrawFn(null);
       setDepositFn(null);
+      setRefreshCollateral(null);
+      setDriftCollateral(null);
       return;
     }
     const wallet = getWallet();
@@ -32,6 +36,8 @@ export function LiveSignerBridge() {
       setSigner(null);
       setWithdrawFn(null);
       setDepositFn(null);
+      setRefreshCollateral(null);
+      setDriftCollateral(null);
       return;
     }
 
@@ -39,13 +45,21 @@ export function LiveSignerBridge() {
     setSigner(makeDriftSigner(ctx));
     setWithdrawFn(async (amount) => withdrawVia(ctx, amount));
     setDepositFn(async (amount) => depositVia(ctx, amount));
+    // read Drift collateral on demand (opening the wallet sheet / after a deposit or withdraw)
+    setRefreshCollateral(() => {
+      collateralVia(ctx)
+        .then((c) => setDriftCollateral(c))
+        .catch(() => {});
+    });
 
     return () => {
       setSigner(null);
       setWithdrawFn(null);
       setDepositFn(null);
+      setRefreshCollateral(null);
+      setDriftCollateral(null);
     };
-  }, [ready, address, solAddress, getWallet, setSigner, setWithdrawFn, setDepositFn]);
+  }, [ready, address, solAddress, getWallet, setSigner, setWithdrawFn, setDepositFn, setRefreshCollateral, setDriftCollateral]);
 
   return null;
 }

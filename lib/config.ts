@@ -9,9 +9,10 @@ export const config = {
   network: (process.env.NEXT_PUBLIC_SOLANA_CLUSTER as SolanaCluster) || "mainnet-beta",
   mode: (process.env.NEXT_PUBLIC_STRIKE_MODE as StrikeMode) || "paper",
   market: process.env.NEXT_PUBLIC_MARKET || "BTC/USD",
-  // Chart/settlement price source. "pyth" (default) matches Drift's oracle exactly, so the
-  // number you watch is the number your position fills against. "binance" is a smoother-looking
-  // alternative but drifts from the on-chain fill — only for demo aesthetics.
+  // Chart/settlement price source. "pyth" (default) tracks Drift's oracle: Drift settles BTC-PERP
+  // on Pyth Lazer while we stream Pyth Hermes — both are the same Pyth BTC/USD aggregate, so the
+  // number you watch matches the on-chain fill within sub-second latency. "binance" is a
+  // smoother-looking alternative that drifts from the fill — demo aesthetics only.
   priceFeed: (process.env.NEXT_PUBLIC_PRICE_FEED as "pyth" | "binance") || "pyth",
   // Public Solana RPC. A dedicated RPC (Helius/Triton/QuickNode) is strongly recommended for
   // live trading; the public endpoint is rate-limited. Used client-side for the Drift SDK.

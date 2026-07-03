@@ -44,13 +44,16 @@ interface StrikeState {
   pairConfig: DriftPairConfig | null;
   displayPrice: number; // throttled (~2/s) live price for low-frequency UI (win-hint)
   feedStatus: { status: string; source: string };
-  usdcBalance: number | null; // connected user's real USDC available to trade (null = unknown)
+  usdcBalance: number | null; // connected user's USDC in their wallet (deposit-able; null = unknown)
+  driftCollateral: number | null; // connected user's free USDC collateral on Drift (tradable margin)
   // live withdraw handler, registered by the Drift signer bridge (null until wired/connected)
   withdrawFn: ((amount: number, dest: string) => Promise<{ txhash?: string }>) | null;
   // live deposit handler (wallet -> Drift collateral), registered by the Drift signer bridge
   depositFn: ((amount: number) => Promise<{ txhash?: string }>) | null;
   // re-poll the connected wallet's real USDC balance now (registered by the auth provider)
   refreshBalance: (() => void) | null;
+  // re-read the connected wallet's Drift collateral now (registered by the signer bridge)
+  refreshCollateral: (() => void) | null;
   _fid: number;
 
   // pure actions
@@ -66,9 +69,11 @@ interface StrikeState {
   setDisplayPrice: (p: number) => void;
   setFeedStatus: (status: string, source: string) => void;
   setUsdcBalance: (b: number | null) => void;
+  setDriftCollateral: (b: number | null) => void;
   setWithdrawFn: (f: StrikeState["withdrawFn"]) => void;
   setDepositFn: (f: StrikeState["depositFn"]) => void;
   setRefreshBalance: (f: StrikeState["refreshBalance"]) => void;
+  setRefreshCollateral: (f: StrikeState["refreshCollateral"]) => void;
 
   // game-state mutations (called by the engine with price-derived values)
   startCall: (call: Call) => void;
@@ -112,9 +117,11 @@ export const useStrike = create<StrikeState>((set, get) => ({
   displayPrice: 0,
   feedStatus: { status: "connecting", source: "none" },
   usdcBalance: null,
+  driftCollateral: null,
   withdrawFn: null,
   depositFn: null,
   refreshBalance: null,
+  refreshCollateral: null,
   _fid: 1,
 
   setStake: (s) => set({ stake: s }),
@@ -129,9 +136,11 @@ export const useStrike = create<StrikeState>((set, get) => ({
   setDisplayPrice: (p) => set({ displayPrice: p }),
   setFeedStatus: (status, source) => set({ feedStatus: { status, source } }),
   setUsdcBalance: (b) => set({ usdcBalance: b }),
+  setDriftCollateral: (b) => set({ driftCollateral: b }),
   setWithdrawFn: (f) => set({ withdrawFn: f }),
   setDepositFn: (f) => set({ depositFn: f }),
   setRefreshBalance: (f) => set({ refreshBalance: f }),
+  setRefreshCollateral: (f) => set({ refreshCollateral: f }),
 
   startCall: (call) => set({ call, resolve: null }),
 
