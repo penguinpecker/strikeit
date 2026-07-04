@@ -16,6 +16,23 @@ import { shortAddress } from "@/lib/solana/wallet";
 import type { Dir, Call, Marker } from "@/lib/types";
 import type { RecentTrade } from "@/lib/drift/types";
 
+// Pull the most useful human-readable text out of whatever error the live path throws, so the user
+// sees the ACTUAL reason (e.g. "0x1771: insufficient collateral") instead of a generic message.
+function errMsg(e: unknown, fallback: string): string {
+  if (e instanceof DriftRailError) return e.message;
+  if (e instanceof Error && e.message) return e.message;
+  return fallback;
+}
+
+// Bound an on-chain await so a hung RPC / wallet can never freeze the tap flow (which would latch
+// the `opening` guard and block every future trade). Rejects with a clear message on timeout.
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out — network/wallet took too long; try again`)), ms)),
+  ]);
+}
+
 export interface EngineRefs {
   app: RefObject<HTMLDivElement | null>;
   chart: RefObject<HTMLCanvasElement | null>;
@@ -248,7 +265,9 @@ export class GameEngine {
       s.showToast(bal <= 0 ? "no SOL — send some to play" : `${sol(intent.stake)} stake > your ${sol(bal)} — lower it`);
     const inp = validateInputs(intent);
     if (!inp.ok) return s.showToast(inp.reason || "bad input");
-    if (intent.stake > bal) return lowBal();
+    // Only gate on balance for LIVE trades with a KNOWN balance — paper mode is playable with no
+    // funds, and a not-yet-loaded balance (null) must not silently reject taps.
+    if (this.opts.mode === "live" && s.solBalance != null && intent.stake > s.solBalance) return lowBal();
     // live: enforce Drift's real leverage cap + min position, valued in USD (the stake is in SOL)
     if (this.opts.mode === "live" && s.pairConfig) {
       const cfg = s.pairConfig;
@@ -267,14 +286,25 @@ export class GameEngine {
     let openTxhash: string | undefined;
     if (this.opts.mode === "live") {
       this.opening = true;
-      s.showToast("opening on-chain — approve in your wallet…");
+      s.showToast(config.liveBroadcast ? "opening on-chain — approve in your wallet…" : "opening (dry run — nothing sent)…");
       try {
-        const r = await this.signer.openMarket({ ...intent, symbol: this.opts.market, markPrice: this.price });
+        const r = await withTimeout(
+          this.signer.openMarket({ ...intent, symbol: this.opts.market, markPrice: this.price }),
+          45_000,
+          "opening",
+        );
         marketIndex = r.marketIndex;
         openTxhash = r.txhash;
+        // A dry-run (broadcast off) returns a sentinel txhash and sends nothing — never let it
+        // masquerade as a real fill.
+        if (openTxhash && openTxhash.startsWith("(dry-run")) {
+          this.opening = false;
+          return s.showToast("dry run — nothing was sent on-chain");
+        }
+        s.showToast(openTxhash ? `position opened · ${openTxhash.slice(0, 8)}…` : "position opened");
       } catch (e) {
         this.opening = false;
-        return s.showToast(e instanceof DriftRailError ? e.message : "live trade failed");
+        return s.showToast(errMsg(e, "live trade failed"));
       }
     }
     // round-trip cost (taker both sides + STRIKE fee + tx) — subtracted from PnL LIVE and at
@@ -332,10 +362,10 @@ export class GameEngine {
   private liveClose(c: Call) {
     if (this.opts.mode !== "live") return;
     const attempt = (n: number): Promise<unknown> =>
-      this.signer.closeMarket({ symbol: this.opts.market, slippage: 0.02 }).catch((e) => {
+      withTimeout(this.signer.closeMarket({ symbol: this.opts.market, slippage: 0.02 }), 45_000, "closing").catch((e) => {
         if (n < 1) return attempt(n + 1);
         console.warn("[strike] live close failed", e);
-        store().showToast(e instanceof DriftRailError ? e.message : "on-chain close pending — check your Drift positions");
+        store().showToast(errMsg(e, "on-chain close pending — check your Drift positions"));
       });
     void attempt(0);
   }

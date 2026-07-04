@@ -143,6 +143,19 @@ function marketMaxLeverage(drift: Any, client: Any, marketIndex: number): number
   }
 }
 
+// SOL is collateral at a discount (initial asset weight ~0.8), so $1 of SOL backs only ~$0.8 of
+// margin. Notional must stay within free collateral, i.e. effective max leverage = weight × market
+// cap. Without this, a max-leverage order exceeds free collateral and the tx reverts.
+function solCollateralWeight(drift: Any, client: Any): number {
+  try {
+    const m = client.getSpotMarketAccount(SOL_SPOT_INDEX);
+    const w = Number(m.initialAssetWeight) / Number(drift.SPOT_MARKET_WEIGHT_PRECISION);
+    return w > 0 && w <= 1 ? w : 0.8;
+  } catch {
+    return 0.8;
+  }
+}
+
 /** Free (tradable) USDC collateral in the user's Drift account, human units. 0 if no account. */
 export async function getDriftCollateral(ctx: LiveContext): Promise<number> {
   try {
@@ -177,14 +190,19 @@ export async function openMarketLive(p: OpenLiveParams, ctx: LiveContext): Promi
   // start tracking the (possibly just-created) subaccount so placePerpOrder can resolve the user.
   await trackUser(client, ctx.wallet.publicKey);
 
-  // stake is in SOL. Notional (USD) = stakeSOL × SOL/USD × leverage, clamped to the perp's real max.
+  // stake is in SOL. Notional (USD) = stakeSOL × SOL/USD × leverage, clamped to the perp's real max
+  // AND discounted by SOL's collateral weight (+5% fee buffer) so it always fits free collateral.
   const solUsd = drift.convertToNumber(client.getOracleDataForSpotMarket(SOL_SPOT_INDEX).price, drift.PRICE_PRECISION);
-  const lev = Math.min(p.leverage, marketMaxLeverage(drift, client, marketIndex));
+  const maxLev = marketMaxLeverage(drift, client, marketIndex);
+  const weight = solCollateralWeight(drift, client);
+  const lev = Math.max(1, Math.min(p.leverage, Math.floor(maxLev * weight * 0.95)));
   const notionalUsd = p.stake * solUsd * lev;
   const baseAssetAmount = client.convertToPerpPrecision(notionalUsd / (p.markPrice || 1));
   const orderParams = drift.getMarketOrderParams({ marketIndex, direction, baseAssetAmount });
 
-  const txSig: string = await client.placePerpOrder(orderParams);
+  // placeAndTake fills the market order atomically in the SAME confirmed tx (vs placePerpOrder,
+  // which only rests the order and waits on a keeper/auction) — symmetric with closePosition.
+  const txSig: string = await client.placeAndTakePerpOrder(orderParams);
   await confirm(connection, txSig);
   return { txhash: txSig, marketIndex, isLong: p.side === "long" };
 }
