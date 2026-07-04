@@ -18,6 +18,7 @@ export function WalletViews({ view }: { view: "wallet" | "deposit" | "withdraw" 
   const bal = useStrike((s) => s.usdcBalance);
   const collateral = useStrike((s) => s.driftCollateral);
   const openSheet = useStrike((s) => s.openSheet);
+  const closeSheet = useStrike((s) => s.closeSheet);
   const showToast = useStrike((s) => s.showToast);
   const refreshBalance = useStrike((s) => s.refreshBalance);
   const refreshCollateral = useStrike((s) => s.refreshCollateral);
@@ -38,7 +39,14 @@ export function WalletViews({ view }: { view: "wallet" | "deposit" | "withdraw" 
     return (
       <>
         <div className="sub" style={{ marginBottom: 10 }}>connect 𝕏 to open your wallet</div>
-        <button className="xgo" onClick={auth.login}>
+        <button
+          className="xgo"
+          onClick={() => {
+            // close the sheet first so the Privy login modal opens on a clean screen, never behind it
+            closeSheet();
+            auth.login();
+          }}
+        >
           <XLogo size={15} /> CONNECT 𝕏
         </button>
       </>
