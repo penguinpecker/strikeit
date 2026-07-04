@@ -13,7 +13,7 @@ export function CashOut({ cashBtnRef }: { cashBtnRef: RefObject<HTMLButtonElemen
     <>
       <div id="cash" style={{ display: live ? "block" : "none" }}>
         <button id="cashBtn" ref={cashBtnRef} onClick={cashOut}>
-          CASH OUT · $25.00
+          CASH OUT · ◎0.050
         </button>
         <button className="esc" id="rideBtn" onClick={() => showToast("riding to the buzzer 🚀")}>
           …or ride it to the buzzer

@@ -7,7 +7,7 @@ import { PriceFeed, type FeedSource, type FeedStatus } from "@/lib/feed/priceFee
 import { quoteCost, validateTap, UnwiredSigner, DriftRailError, type Side, type Signer } from "@/lib/drift/rail";
 import { useStrike } from "@/lib/store";
 import { config } from "@/lib/config";
-import { fmt, fmt2 } from "@/lib/format";
+import { fmt, fmt2, sol } from "@/lib/format";
 import { blip, chime, thud, haptic } from "@/lib/audio";
 import { loadAvatar, avatarImage, addrColor } from "@/lib/social";
 import { recordCall } from "@/lib/persist";
@@ -242,17 +242,19 @@ export class GameEngine {
     if (this.activeCall || this.opening) return; // guard covers the whole in-flight open window
     const s = store();
     if (!s.user) return s.showToast("connect 𝕏 to trade");
-    const bal = s.usdcBalance ?? 0;
+    const bal = s.solBalance ?? 0;
     const intent = { stake: s.stake, leverage: s.levSel, side: (dir > 0 ? "long" : "short") as Side };
+    const lowBal = () =>
+      s.showToast(bal <= 0 ? "no SOL — send some to play" : `${sol(intent.stake)} stake > your ${sol(bal)} — lower it`);
     if (s.pairConfig) {
       const v = validateTap(intent, s.pairConfig, bal);
       if (!v.ok) {
         if (v.code === "BELOW_MIN_NOTIONAL" && this.opts.mode === "live") return s.showToast(v.reason || "below minimum");
-        if (v.code === "INSUFFICIENT_BALANCE") return s.showToast(bal <= 0 ? "no USDC — deposit to trade" : `$${intent.stake} stake > your $${fmt2(bal)} — lower it or deposit`);
+        if (v.code === "INSUFFICIENT_BALANCE") return lowBal();
         if (v.code === "BAD_INPUT") return s.showToast(v.reason || "bad input");
       }
     } else if (s.stake > bal) {
-      return s.showToast(bal <= 0 ? "no USDC — deposit to trade" : `$${intent.stake} stake > your $${fmt2(bal)} — lower it or deposit`);
+      return lowBal();
     }
 
     let marketIndex: number | undefined;
@@ -604,11 +606,11 @@ export class GameEngine {
     const val = Math.max(0, c.stake * (1 + move * c.lev) - (c.cost ?? 0));
     const pnl = val - c.stake;
     const pnlEl = this.refs.pnl.current;
-    if (pnlEl) pnlEl.textContent = (pnl >= 0 ? "+" : "−") + "$" + fmt2(Math.abs(pnl));
+    if (pnlEl) pnlEl.textContent = (pnl >= 0 ? "+" : "−") + sol(Math.abs(pnl), 4);
     const lsub = this.refs.lsub.current;
     if (lsub) lsub.textContent = `${this.opts.market.split("/")[0]} $${fmt2(this.headP)} · entry $${fmt2(c.entry)} · ${c.lev}x`;
     const cashBtn = this.refs.cashBtn.current;
-    if (cashBtn) cashBtn.textContent = "CASH OUT · $" + fmt2(val);
+    if (cashBtn) cashBtn.textContent = "CASH OUT · " + sol(val, 4);
     const now = Date.now();
     const left = Math.max(0, c.dur - (now - c.t0));
     const tleft = this.refs.tleft.current;

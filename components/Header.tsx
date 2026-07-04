@@ -1,12 +1,12 @@
 "use client";
 
 import { useStrike } from "@/lib/store";
-import { fmt2 } from "@/lib/format";
+import { sol } from "@/lib/format";
 import { BrandMark, XLogo } from "./icons";
 import { useAuth } from "./auth/AuthContext";
 
 export function Header() {
-  const usdcBalance = useStrike((s) => s.usdcBalance);
+  const solBalance = useStrike((s) => s.solBalance);
   const openSheet = useStrike((s) => s.openSheet);
   const { connected, handle, avatar, login } = useAuth();
 
@@ -40,8 +40,8 @@ export function Header() {
           title={connected ? "wallet · deposit / withdraw" : "connect to deposit"}
         >
           <span className="l">wallet ›</span>
-          <span className="v" key={String(usdcBalance)} id="bal">
-            {connected ? (usdcBalance == null ? "…" : `$${fmt2(usdcBalance)}`) : "—"}
+          <span className="v" key={String(solBalance)} id="bal">
+            {connected ? (solBalance == null ? "…" : sol(solBalance)) : "—"}
           </span>
         </div>
       </div>

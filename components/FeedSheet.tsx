@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStrike, dirLabel } from "@/lib/store";
 import { addrColor } from "@/lib/social";
-import { fmt2 } from "@/lib/format";
+import { fmt2, sol } from "@/lib/format";
 import { Avatar } from "./Avatar";
 import { useEngine } from "./engineContext";
 import { useAuth } from "./auth/AuthContext";
@@ -39,7 +39,7 @@ export function FeedSheet() {
   const hits = useStrike((s) => s.hits);
   const total = useStrike((s) => s.total);
   const streak = useStrike((s) => s.streak);
-  const usdcBalance = useStrike((s) => s.usdcBalance);
+  const solBalance = useStrike((s) => s.solBalance);
   const closeSheet = useStrike((s) => s.closeSheet);
   const setUser = useStrike((s) => s.setUser);
   const showToast = useStrike((s) => s.showToast);
@@ -98,7 +98,7 @@ export function FeedSheet() {
   const [title, sub] = HEAD[view];
   const subText =
     view === "you"
-      ? `${hits}/${total} called · streak ${streak}${usdcBalance != null ? ` · $${fmt2(usdcBalance)}` : ""}`
+      ? `${hits}/${total} called · streak ${streak}${solBalance != null ? ` · ${sol(solBalance)}` : ""}`
       : sub;
 
   return (

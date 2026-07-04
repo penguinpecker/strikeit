@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import gsap from "gsap";
 import { useStrike } from "@/lib/store";
-import { fmt, fmt2 } from "@/lib/format";
+import { fmt, sol } from "@/lib/format";
 import { BrandMark } from "./icons";
 import { useAuth } from "./auth/AuthContext";
 
@@ -40,7 +40,7 @@ export function ResolveOverlay() {
   return (
     <div id="res" data-overlay style={{ display: "flex" }}>
       <div className="big" id="rbig">
-        {(pnl >= 0 ? "+" : "−") + "$" + fmt2(Math.abs(pnl))}
+        {(pnl >= 0 ? "+" : "−") + sol(Math.abs(pnl), 4)}
       </div>
       <div className="word" id="rword">
         {how === "bust" ? (

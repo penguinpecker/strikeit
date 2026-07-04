@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStrike, dirLabel } from "@/lib/store";
-import { fmt2 } from "@/lib/format";
+import { fmt2, sol } from "@/lib/format";
 import { config } from "@/lib/config";
 import { Avatar } from "./Avatar";
 import { useEngine } from "./engineContext";
@@ -24,7 +24,7 @@ const ago = (ts: number) => {
 export function NotiRails() {
   const notis = useStrike((s) => s.notis);
   const feed = useStrike((s) => s.feed);
-  const usdcBalance = useStrike((s) => s.usdcBalance);
+  const solBalance = useStrike((s) => s.solBalance);
   const hits = useStrike((s) => s.hits);
   const total = useStrike((s) => s.total);
   const streak = useStrike((s) => s.streak);
@@ -170,7 +170,7 @@ export function NotiRails() {
           <div className="fx">
             <div className="nm">you</div>
             <div className="ds">
-              {usdcBalance != null ? `$${fmt2(usdcBalance)} · ` : ""}
+              {solBalance != null ? `${sol(solBalance)} · ` : ""}
               {hits}/{total} called
             </div>
           </div>

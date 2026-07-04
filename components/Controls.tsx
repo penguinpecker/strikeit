@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useStrike } from "@/lib/store";
 import { LEVS, STAKES } from "@/lib/constants";
 import { quoteCost } from "@/lib/drift/rail";
-import { fmt, fmt2 } from "@/lib/format";
+import { fmt, sol } from "@/lib/format";
 import { config, baseAsset } from "@/lib/config";
 import { blip, haptic } from "@/lib/audio";
 
@@ -23,20 +23,20 @@ function WinHint() {
       const minLev = Math.ceil(cfg.minPositionValue / stake);
       return (
         <>
-          ${stake} at {lev}x = ${fmt(notional)} notional — below ${cfg.minPositionValue} min · need <b>{minLev}x+</b>
+          {sol(stake)} at {lev}x = {sol(notional)} notional — below {sol(cfg.minPositionValue)} min · need <b>{minLev}x+</b>
         </>
       );
     }
     const beUsd = q.breakevenMoveUsd(price);
     return (
       <>
-        ${stake} at <b>{lev}x</b> — fees ${fmt2(q.roundTripCost)} · clear <b>${fmt(beUsd)}</b> to win{skull}
+        {sol(stake)} at <b>{lev}x</b> — fees {sol(q.roundTripCost, 4)} · clear <b>${fmt(beUsd)}</b> to win{skull}
       </>
     );
   }
   return (
     <>
-      ${stake} at <b>{lev}x</b> — a typical 30s ride swings <b>±${fmt(stake * lev * 0.005)}</b>
+      {sol(stake)} at <b>{lev}x</b> — a typical 30s ride swings <b>±{sol(stake * lev * 0.005, 4)}</b>
       {skull}
     </>
   );
@@ -45,14 +45,13 @@ function WinHint() {
 export function Controls() {
   const live = useStrike((s) => !!s.call);
   const stake = useStrike((s) => s.stake);
-  const bal = useStrike((s) => s.usdcBalance);
+  const bal = useStrike((s) => s.solBalance);
   const levSel = useStrike((s) => s.levSel);
   const setStake = useStrike((s) => s.setStake);
   const setLev = useStrike((s) => s.setLev);
   const d = live ? "none" : undefined;
 
-  // keep the selected stake within the real balance — a small balance shouldn't dead-end on
-  // the default $25 (which reads like a "minimum"); fall to the largest affordable preset.
+  // keep the selected stake within the real SOL balance — fall to the largest affordable preset.
   useEffect(() => {
     if (bal == null || stake <= bal) return;
     const fit = STAKES.filter((v) => v <= bal);
@@ -89,13 +88,13 @@ export function Controls() {
             <div
               key={s}
               className={`sk${s === stake ? " sel" : ""}${tooBig ? " dim" : ""}`}
-              title={tooBig ? `needs $${s} · you have $${fmt2(bal)}` : undefined}
+              title={tooBig ? `needs ${sol(s)} · you have ${sol(bal ?? 0)}` : undefined}
               onClick={() => {
                 setStake(s);
                 haptic();
               }}
             >
-              ${s}
+              {sol(s)}
             </div>
           );
         })}

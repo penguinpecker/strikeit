@@ -99,7 +99,7 @@ interface StrikeState {
 
 export const useStrike = create<StrikeState>((set, get) => ({
   market: config.market,
-  stake: 25,
+  stake: 0.05,
   levSel: 50,
   streak: 0,
   hits: 0,
