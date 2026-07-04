@@ -79,9 +79,23 @@ function perpMarketIndex(drift: Any, base: string, env: string): number {
   return m.marketIndex;
 }
 
-// USDC has 6 decimals → spot precision (QUOTE_PRECISION) is 1e6.
-function usdcAmount(drift: Any, human: number): Any {
-  return new drift.BN(Math.round(human * 1e6));
+// STRIKE SOL trades with SOL as Drift collateral: SOL spot market = index 1, 9 decimals.
+const SOL_SPOT_INDEX = 1;
+function solAmount(drift: Any, human: number): Any {
+  return new drift.BN(Math.round(human * 1e9));
+}
+
+// Drift's real per-market max leverage (= MARGIN_PRECISION / marginRatioInitial). The game shows
+// up to 200x but a perp only allows its on-chain cap (e.g. ~20x for BTC), so live orders clamp.
+function marketMaxLeverage(drift: Any, client: Any, marketIndex: number): number {
+  try {
+    const m = client.getPerpMarketAccount(marketIndex);
+    const mp = Number(drift.MARGIN_PRECISION);
+    const lev = Math.floor(mp / m.marginRatioInitial);
+    return lev > 0 ? lev : 20;
+  } catch {
+    return 20;
+  }
 }
 
 /** Free (tradable) USDC collateral in the user's Drift account, human units. 0 if no account. */
@@ -104,22 +118,23 @@ export async function openMarketLive(p: OpenLiveParams, ctx: LiveContext): Promi
   const def = marketDef(p.symbol);
   const marketIndex = perpMarketIndex(drift, def.base, cc.driftEnv);
   const broadcast = ctx.broadcast ?? config.liveBroadcast;
-
-  // size the position: notional / price = base amount, in Drift base precision (1e9)
-  const notional = p.stake * p.leverage;
-  const baseAmount = notional / (p.markPrice || 1);
-  const baseAssetAmount = client.convertToPerpPrecision(baseAmount);
   const direction = p.side === "long" ? drift.PositionDirection.LONG : drift.PositionDirection.SHORT;
 
-  const orderParams = drift.getMarketOrderParams({ marketIndex, direction, baseAssetAmount });
-
   if (!broadcast) {
-    // dry-run: everything is resolved + built; nothing is sent.
+    // dry-run: resolve everything, send nothing.
     return { txhash: "(dry-run, not sent)", marketIndex, isLong: p.side === "long" };
   }
 
-  // live: ensure the user account + collateral exists, then place the market order and CONFIRM.
-  await ensureCollateral(client, drift, connection, cc, ctx, p.stake);
+  // live: ensure the user's Drift account exists + has SOL collateral, then size + place the order.
+  await ensureCollateral(client, drift, connection, ctx, p.stake);
+
+  // stake is in SOL. Notional (USD) = stakeSOL × SOL/USD × leverage, clamped to the perp's real max.
+  const solUsd = drift.convertToNumber(client.getOracleDataForSpotMarket(SOL_SPOT_INDEX).price, drift.PRICE_PRECISION);
+  const lev = Math.min(p.leverage, marketMaxLeverage(drift, client, marketIndex));
+  const notionalUsd = p.stake * solUsd * lev;
+  const baseAssetAmount = client.convertToPerpPrecision(notionalUsd / (p.markPrice || 1));
+  const orderParams = drift.getMarketOrderParams({ marketIndex, direction, baseAssetAmount });
+
   const txSig: string = await client.placePerpOrder(orderParams);
   await confirm(connection, txSig);
   return { txhash: txSig, marketIndex, isLong: p.side === "long" };
@@ -144,48 +159,38 @@ export async function closeMarketLive(
   return { txhash: txSig };
 }
 
-/** Deposit USDC from the wallet into Drift collateral (makes it tradable). Gated by broadcast. */
+/** Deposit native SOL from the wallet into Drift collateral (makes it tradable). Gated by broadcast.
+ *  Passing the wallet pubkey as the token account tells Drift to wrap native SOL into the SOL market. */
 export async function depositCollateral(
   amount: number,
   ctx: LiveContext,
 ): Promise<{ txhash?: string; amount: number }> {
   const drift = await import("@drift-labs/sdk");
-  const { getAssociatedTokenAddress } = await import("@solana/spl-token");
-  const web3 = await import("@solana/web3.js");
   const { client, connection } = await getClient(ctx);
-  const cc = clusterConfig(ctx.network);
   const broadcast = ctx.broadcast ?? config.liveBroadcast;
-
-  const usdcAta = await getAssociatedTokenAddress(new web3.PublicKey(cc.usdcMint), ctx.wallet.publicKey as Any);
-  const depositAmount = usdcAmount(drift, amount);
-
   if (!broadcast) return { amount };
 
+  const depositAmount = solAmount(drift, amount);
   const hasUser = await userExists(client);
   const txSig: string = hasUser
-    ? await client.deposit(depositAmount, cc.usdcSpotMarketIndex, usdcAta)
-    : await client.initializeUserAccountAndDepositCollateral(depositAmount, usdcAta);
+    ? await client.deposit(depositAmount, SOL_SPOT_INDEX, ctx.wallet.publicKey)
+    : await client.initializeUserAccountAndDepositCollateral(depositAmount, ctx.wallet.publicKey, SOL_SPOT_INDEX);
   await confirm(connection, txSig);
   return { txhash: txSig, amount };
 }
 
-/** Withdraw USDC from Drift collateral back to the wallet. Gated by broadcast. */
+/** Withdraw SOL from Drift collateral back to the wallet (unwrapped to native SOL). Gated by broadcast. */
 export async function withdrawCollateral(
   amount: number,
   ctx: LiveContext,
 ): Promise<{ txhash?: string; amount: number }> {
   const drift = await import("@drift-labs/sdk");
-  const { getAssociatedTokenAddress } = await import("@solana/spl-token");
-  const web3 = await import("@solana/web3.js");
   const { client, connection } = await getClient(ctx);
-  const cc = clusterConfig(ctx.network);
   const broadcast = ctx.broadcast ?? config.liveBroadcast;
-
-  const usdcAta = await getAssociatedTokenAddress(new web3.PublicKey(cc.usdcMint), ctx.wallet.publicKey as Any);
-  const withdrawAmount = usdcAmount(drift, amount);
-
   if (!broadcast) return { amount };
-  const txSig: string = await client.withdraw(withdrawAmount, cc.usdcSpotMarketIndex, usdcAta);
+
+  const withdrawAmount = solAmount(drift, amount);
+  const txSig: string = await client.withdraw(withdrawAmount, SOL_SPOT_INDEX, ctx.wallet.publicKey);
   await confirm(connection, txSig);
   return { txhash: txSig, amount };
 }
@@ -194,17 +199,17 @@ async function ensureCollateral(
   client: Any,
   drift: Any,
   connection: Any,
-  cc: { usdcSpotMarketIndex: number; usdcMint: string },
   ctx: LiveContext,
-  needed: number,
+  neededSol: number,
 ) {
   const hasUser = await userExists(client);
   if (hasUser) return;
-  const { getAssociatedTokenAddress } = await import("@solana/spl-token");
-  const web3 = await import("@solana/web3.js");
-  const usdcAta = await getAssociatedTokenAddress(new web3.PublicKey(cc.usdcMint), ctx.wallet.publicKey as Any);
-  const depositAmount = usdcAmount(drift, needed);
-  const sig: string = await client.initializeUserAccountAndDepositCollateral(depositAmount, usdcAta);
+  const depositAmount = solAmount(drift, neededSol);
+  const sig: string = await client.initializeUserAccountAndDepositCollateral(
+    depositAmount,
+    ctx.wallet.publicKey,
+    SOL_SPOT_INDEX,
+  );
   await confirm(connection, sig);
 }
 
